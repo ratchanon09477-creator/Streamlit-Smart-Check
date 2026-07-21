@@ -1,13 +1,16 @@
-
 import streamlit as st
 from inference_sdk import InferenceHTTPClient
 from PIL import Image, ImageDraw
 import os
 from datetime import datetime
 from streamlit_javascript import st_javascript
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+import tempfile
 
 # 1. ตั้งค่าหน้าตา UI ให้เรียบร้อย
-st.set_page_config(page_title="Smart Check App Version 2.0", page_icon="🚪", layout="wide")
+st.set_page_config(page_title="Smart Check App - Cloud Version", page_icon="🚪", layout="wide")
 
 st.markdown("""
     <style>
@@ -28,7 +31,6 @@ st.markdown("""
         max-width: 100% !important;
         margin: 0 auto;
     }
-    /* สไตล์การ์ดแสดงผลฝั่งหลังบ้าน */
     .admin-card-present {
         color: #28a745; font-weight: bold; font-size: 14px; margin: 2px 0;
     }
@@ -38,7 +40,28 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-LOG_DIR = "backend_logs"
+# ☁️ ฟังก์ชันเชื่อมต่อและอัปโหลดไฟล์ขึ้น Google Drive
+def upload_file_to_drive(local_file_path, file_name, mime_type="image/jpeg"):
+    try:
+        # ดึงค่า Secrets จาก Streamlit
+        gdrive_creds = dict(st.secrets["google_service_account"])
+        folder_id = st.secrets["GDRIVE_FOLDER_ID"]
+        
+        credentials = service_account.Credentials.from_service_account_info(
+            gdrive_creds, scopes=['https://www.googleapis.com/auth/drive']
+        )
+        service = build('drive', 'v3', credentials=credentials)
+        
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id]
+        }
+        media = MediaFileUpload(local_file_path, mimetype=mime_type)
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        return True
+    except Exception as e:
+        st.error(f"อัปโหลดไป Google Drive ไม่สำเร็จ: {e}")
+        return False
 
 # 2. ฟังก์ชันโหลดโมเดล AI
 @st.cache_resource
@@ -65,13 +88,13 @@ CLASS_MAPPING_TH = {
 # 🗺️ เมนูแถบด้านข้าง (Sidebar Navigation)
 # ==========================================
 st.sidebar.title("📌 เมนูควบคุมระบบ")
-app_mode = st.sidebar.selectbox("เลือกหน้าเว็บที่ต้องการเข้าชม:", ["📸 หน้าหลัก (ตรวจเช็คสิ่งของ)", "📊 ระบบหลังบ้าน (สำหรับ Admin)"])
+app_mode = st.sidebar.selectbox("เลือกหน้าเว็บที่ต้องการเข้าชม:", ["📸 หน้าหลัก (ตรวจเช็คสิ่งของ)", "📊 ข้อมูลระบบคลาวด์"])
 
 # ------------------------------------------
 # โหมดที่ 1: หน้าหลักตรวจเช็คสิ่งของ (User Mode)
 # ------------------------------------------
 if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่งของ)":
-    st.title("🌐 ระบบตรวจเช็คสิ่งของอัจฉริยะ")
+    st.title("🌐 ระบบตรวจเช็คสิ่งของอัจฉริยะ (Cloud Version)")
     st.write("---")
 
     ua = st_javascript("navigator.userAgent")
@@ -87,8 +110,8 @@ if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่
 
         if is_mobile:
             uploaded_file = st.file_uploader(
-                "📱 เปิดบนมือถือ: กดปุ่มด้านล่างแล้วเลือก 'ถ่ายภาพ' จากกล้องได้เลยครับ",
-                type=["jpg", "jpeg", "png"],
+                "📱 เปิดบนมือถือ: กดปุ่มด้านล่างแล้วเลือก 'ถ่ายภาพ' จากกล้องได้เลยครับ", 
+                type=["jpg", "jpeg", "png"], 
                 key="mobile_upload"
             )
         else:
@@ -104,24 +127,23 @@ if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่
 
     with col_result:
         st.subheader("📊 ผลการตรวจสอบความพร้อม")
-
+        
         if uploaded_file is not None:
-            # โหลดภาพดั้งเดิมไว้ (Raw Image)
             image_raw = Image.open(uploaded_file)
             if hasattr(image_raw, '_getexif') and image_raw._getexif() is not None:
                 from PIL import ImageOps
                 image_raw = ImageOps.exif_transpose(image_raw)
-
-            # คัดลอกสร้างอีกรูปไว้สำหรับให้ AI วาดกรอบสี่เหลี่ยม (AI Image)
+            
             image_ai = image_raw.copy()
-
             found_objects = set()
             predictions = []
-
+            
             with st.spinner("AI กำลังวิเคราะห์รูปภาพของคุณ..."):
                 try:
-                    temp_path = "remote_scan_temp.jpg"
-                    image_raw.save(temp_path)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+                        image_raw.save(temp_file.name)
+                        temp_path = temp_file.name
+                        
                     result = client.infer(temp_path, model_id=model_id)
                     predictions = result.get("predictions", [])
                     if os.path.exists(temp_path):
@@ -135,13 +157,13 @@ if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่
                     found_objects.add(c_name)
 
             is_all_present = all(cls in found_objects for cls in REQUIRED_CLASSES)
-
+            
             if is_all_present:
                 st.markdown('<div class="status-pass">🟢 PASS: ของครบถ้วน ออกเดินทางได้!</div>', unsafe_allow_html=True)
                 st.balloons()
             else:
                 st.markdown('<div class="status-fail">🔴 FAIL: ยังขาดของบางชิ้น!</div>', unsafe_allow_html=True)
-
+                
             for cls in REQUIRED_CLASSES:
                 display_name = CLASS_MAPPING_TH.get(cls, cls)
                 if cls in found_objects:
@@ -151,8 +173,7 @@ if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่
 
             st.write("---")
             st.caption("🖼️ ภาพวิเคราะห์จาก AI:")
-
-            # วาดเส้นตำแหน่งลงบนภาพ AI
+            
             draw = ImageDraw.Draw(image_ai)
             for pred in predictions:
                 c_name = pred["class"]
@@ -160,132 +181,40 @@ if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่
                 left, top, right, bottom = x - (w / 2), y - (h / 2), x + (w / 2), y + (h / 2)
                 draw.rectangle([left, top, right, bottom], outline="#00E5FF", width=4)
                 draw.text((left + 5, top + 5), f"{c_name}", fill="#00E5FF")
-
-            # แสดงภาพที่สแกนแล้วบนหน้าแรก
+                
             st.image(image_ai, use_container_width=True)
-
-            # 📂 บันทึกรูปภาพทั้งแบบ Raw และ AI ลงระบบหลังบ้าน
-            if not os.path.exists(LOG_DIR):
-                os.makedirs(LOG_DIR)
-
+            
+            # ☁️ บันทึกไฟล์ขึ้น Google Drive อัตโนมัติ
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             status_str = "PASS" if is_all_present else "FAIL"
             base_filename = f"{timestamp}_{status_str}"
-
-            # 1. เซฟไฟล์ภาพธรรมดา (Raw)
-            image_raw.save(os.path.join(LOG_DIR, f"{base_filename}_raw.jpg"))
-            # 2. เซฟไฟล์ภาพพร้อมกรอบจับ (AI)
-            image_ai.save(os.path.join(LOG_DIR, f"{base_filename}_ai.jpg"))
-            # 3. เซฟไฟล์ประวัติของที่สแกนเจอ (.txt)
-            txt_filepath = os.path.join(LOG_DIR, f"{base_filename}.txt")
-            with open(txt_filepath, "w", encoding="utf-8") as f:
-                f.write(",".join(list(found_objects)))
+            
+            with st.spinner("กำลังสำรองข้อมูลภาพและประวัติขึ้น Google Drive..."):
+                with tempfile.TemporaryDirectory() as tmpdirname:
+                    # 1. บันทึกและอัปโหลดภาพ Raw
+                    raw_path = os.path.join(tmpdirname, f"{base_filename}_raw.jpg")
+                    image_raw.save(raw_path)
+                    upload_file_to_drive(raw_path, f"{base_filename}_raw.jpg", "image/jpeg")
+                    
+                    # 2. บันทึกและอัปโหลดภาพ AI
+                    ai_path = os.path.join(tmpdirname, f"{base_filename}_ai.jpg")
+                    image_ai.save(ai_path)
+                    upload_file_to_drive(ai_path, f"{base_filename}_ai.jpg", "image/jpeg")
+                    
+                    # 3. บันทึกและอัปโหลดไฟล์ txt รายการสิ่งของ
+                    txt_path = os.path.join(tmpdirname, f"{base_filename}.txt")
+                    with open(txt_path, "w", encoding="utf-8") as f:
+                        f.write(",".join(list(found_objects)))
+                    upload_file_to_drive(txt_path, f"{base_filename}.txt", "text/plain")
+                    
+                st.success("☁️ บันทึกข้อมูลและรูปภาพลง Google Drive สำเร็จเรียบร้อย!")
         else:
             st.info("💡 รอการถ่ายภาพหรืออัปโหลดรูปภาพ เพื่อเริ่มต้นวิเคราะห์ระบบ...")
 
 # ------------------------------------------
-# โหมดที่ 2: ระบบจัดการหลังบ้านสำหรับ Admin (Admin Mode)
+# โหมดที่ 2: ข้อมูลระบบคลาวด์
 # ------------------------------------------
 else:
-    st.title("📊 ระบบจัดการและตรวจสอบประวัติหลังบ้าน")
+    st.title("📊 ข้อมูลระบบจัดเก็บข้อมูลบนคลาวด์")
     st.write("---")
-
-    password = st.sidebar.text_input("🔑 ใส่รหัสผ่านเข้าหลังบ้าน:", type="password")
-
-    if password != "admin1234":
-        st.warning("🔒 กรุณากรอกรหัสผ่านที่ถูกต้องในแถบด้านข้าง (Sidebar) เพื่อเปิดเผยข้อมูลหลังบ้าน")
-    else:
-        if not os.path.exists(LOG_DIR) or len(os.listdir(LOG_DIR)) == 0:
-            st.info("💡 ยังไม่มีข้อมูลประวัติการใช้งานในโฟลเดอร์หลังบ้าน")
-        else:
-            # ค้นหาเฉพาะไฟล์รูปภาพดิบดั้งเดิม (_raw.jpg) มาตั้งหลักแสดงผล
-            all_raw_files = [f for f in os.listdir(LOG_DIR) if f.lower().endswith('_raw.jpg')]
-            all_raw_files.sort(reverse=True)
-
-            total_scans = len(all_raw_files)
-            pass_count = sum(1 for f in all_raw_files if "PASS" in f)
-            fail_count = sum(1 for f in all_raw_files if "FAIL" in f)
-            pass_rate = (pass_count / total_scans * 100) if total_scans > 0 else 0
-
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("📸 ตรวจเช็คทั้งหมด", f"{total_scans} ครั้ง")
-            col2.metric("🟢 ผ่าน (PASS)", f"{pass_count} ครั้ง")
-            col3.metric("🔴 ไม่ผ่าน (FAIL)", f"{fail_count} ครั้ง")
-            col4.metric("📈 อัตราการผ่าน", f"{pass_rate:.1f}%")
-
-            st.write("---")
-
-            status_filter = st.selectbox("🔍 กรองสถานะข้อมูล:", ["ทั้งหมด (All)", "เฉพาะที่ผ่าน (PASS)", "เฉพาะที่ไม่ผ่าน (FAIL)"])
-
-            if "PASS" in status_filter:
-                filtered_files = [f for f in all_raw_files if "PASS" in f]
-            elif "FAIL" in status_filter:
-                filtered_files = [f for f in all_raw_files if "FAIL" in f]
-            else:
-                filtered_files = all_raw_files
-
-            st.write(f"พบประวัติบันทึกข้อมูลทั้งหมด **{len(filtered_files)}** รายการ")
-
-            cols_per_row = 4
-            for i in range(0, len(filtered_files), cols_per_row):
-                row_files = filtered_files[i:i+cols_per_row]
-                cols = st.columns(cols_per_row)
-
-                for idx, filename_raw in enumerate(row_files):
-                    with cols[idx]:
-                        # ดึงชื่อโครงสร้างหลักออกมาก่อน
-                        base_prefix = filename_raw.replace("_raw.jpg", "")
-
-                        filepath_raw = os.path.join(LOG_DIR, filename_raw)
-                        filepath_ai = os.path.join(LOG_DIR, f"{base_prefix}_ai.jpg")
-                        txt_filepath = os.path.join(LOG_DIR, f"{base_prefix}.txt")
-
-                        # แกะข้อมูลสิ่งของ (เปิดอ่านแบบปลอดภัยด้วยโหมด "r")
-                        items_found = []
-                        if os.path.exists(txt_filepath):
-                            with open(txt_filepath, "r", encoding="utf-8") as f:
-                                content = f.read().strip()
-                                if content:
-                                    items_found = [item.strip().lower() for item in content.split(",")]
-
-                        try:
-                            parts = base_prefix.split("_")
-                            formatted_time = datetime.strptime(f"{parts[0]}_{parts[1]}", "%Y%m%d_%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
-                        except:
-                            formatted_time = "ไม่ทราบวันเวลา"
-
-                        is_pass = "PASS" in base_prefix
-                        status_label = "🟢 PASS (ของครบ)" if is_pass else "🔴 FAIL (ของขาด)"
-
-                        # --- 📌 แท็บสำหรับสลับดูรูปธรรมดา และ รูป AI ---
-                        tab_raw, tab_ai = st.tabs(["🖼️ ภาพจริง", "🤖 ภาพ AI"])
-
-                        with tab_raw:
-                            if os.path.exists(filepath_raw):
-                                st.image(Image.open(filepath_raw), use_container_width=True)
-                        with tab_ai:
-                            if os.path.exists(filepath_ai):
-                                st.image(Image.open(filepath_ai), use_container_width=True)
-                            else:
-                                st.caption("ไม่มีภาพการตรวจจับแบบ AI")
-
-                        st.caption(f"📅 {formatted_time}")
-                        st.markdown(f"### {status_label}")
-
-                        # --- 📌 ดึงรายการสิ่งของที่แกะได้จากไฟล์ .txt มาแสดงผลตรงนี้ตามที่ต้องการครับ ---
-                        st.markdown("**🔍 รายการของที่ตรวจเจอ:**")
-                        for cls in REQUIRED_CLASSES:
-                            display_name = CLASS_MAPPING_TH.get(cls, cls)
-                            if cls in items_found:
-                                st.markdown(f'<div class="admin-card-present">✅ มี: {display_name}</div>', unsafe_allow_html=True)
-                            else:
-                                st.markdown(f'<div class="admin-card-missing">❌ ขาด: {display_name}</div>', unsafe_allow_html=True)
-
-                        st.write("")
-
-                        if st.button("🗑️ ลบข้อมูล", key=f"del_{base_prefix}"):
-                            if os.path.exists(filepath_raw): os.remove(filepath_raw)
-                            if os.path.exists(filepath_ai): os.remove(filepath_ai)
-                            if os.path.exists(txt_filepath): os.remove(txt_filepath)
-                            st.toast(f"ลบชุดข้อมูลประวัตินี้เสร็จเรียบร้อย")
-                            st.rerun()
+    st.info("💡 เนื่องจากระบบนี้รันบน **Streamlit Community Cloud** (เพื่อเปิดใช้งานได้ 24 ชม. โดยไม่ต้องเปิดคอมพิวเตอร์) ภาพถ่ายและประวัติการตรวจสอบทั้งหมดจะถูกส่งตรงไปจัดเก็บไว้ใน **Google Drive** ที่คุณตั้งค่าเอาไว้โดยอัตโนมัติ คุณสามารถเข้าไปเปิดดูรูปภาพย้อนหลังได้จากใน Google Drive ของคุณโดยตรงเลยครับ!")
