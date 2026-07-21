@@ -1,7 +1,6 @@
 streamlit
-inference-sdk
-PIL
-streamlit-javascript
+inference-sdk>=0.9.0
+pillow
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
