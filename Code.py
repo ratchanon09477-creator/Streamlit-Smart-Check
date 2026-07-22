@@ -57,15 +57,22 @@ def get_gdrive_service():
             # ดึงค่า Secrets ออกมาทำเป็น dict
             creds_dict = dict(st.secrets["google_service_account"])
             
-            # จัดการแก้ไขปัญหา Format ของ private_key
+            # จัดการแก้ไขปัญหา Format และเคลียร์ตัวอักษรขยะ \r ออก
             if "private_key" in creds_dict:
                 pk = creds_dict["private_key"]
-                # แก้ไขกรณีที่มี \n ซ้อนกัน หรือจัด Format PEM ให้ถูกต้อง
+                
+                # ลบ \r (Carriage Return) ของระบบ Windows ออกทันที
+                pk = pk.replace("\r", "")
+                
+                # แปลง \n ที่ถูกเขียนแบบ string ตัวอักษรให้เป็นตัวขึ้นบรรทัดใหม่จริง
                 pk = pk.replace("\\n", "\n")
+                
+                # เติม Header / Footer ถ้าถูกกลืนไป
                 if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
                     pk = "-----BEGIN PRIVATE KEY-----\n" + pk
                 if not pk.endswith("-----END PRIVATE KEY-----"):
                     pk = pk + "\n-----END PRIVATE KEY-----"
+                
                 creds_dict["private_key"] = pk
 
             creds = service_account.Credentials.from_service_account_info(
@@ -78,7 +85,7 @@ def get_gdrive_service():
     except Exception as e:
         st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive Service: {e}")
         return None
-
+        
 def upload_to_gdrive(file_path, file_name, folder_id):
     """ส่งไฟล์ที่กำหนดไปยัง Google Drive"""
     service = get_gdrive_service()
