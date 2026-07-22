@@ -89,35 +89,37 @@ def get_gdrive_service():
     import os
 from googleapiclient.http import MediaFileUpload
 
-    def upload_to_gdrive(filepath, filename, folder_id):
-        """ฟังก์ชันอัปโหลดไฟล์จากดิสก์ลง Google Drive / Shared Drive"""
-        try:
-            drive_service = get_gdrive_service()
-            if not drive_service:
-                st.error("❌ ไม่สามารถเชื่อมต่อ Google Drive Service ได้")
-                return False
-    
-            # กำหนด Metadata ของไฟล์
-            file_metadata = {
-                'name': filename,
-                'parents': [folder_id]
-            }
-    
-            # สร้าง Media สำหรับอัปโหลดจาก Path ของไฟล์
-            media = MediaFileUpload(filepath, resumable=True)
-    
-            # สั่งอัปโหลด (ใส่ supportsAllDrives=True เพื่อรองรับ Shared Drive)
-            file = drive_service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id',
-                supportsAllDrives=True
-            ).execute()
-    
-            return True
-        except Exception as e:
-            st.error(f"⚠️ เกิดข้อผิดพลาดในการอัปโหลด {filename}: {e}")
+def upload_to_gdrive(filepath, filename, folder_id):
+    """ฟังก์ชันอัปโหลดไฟล์จากดิสก์ลง Google Drive / Shared Drive"""
+    try:
+        if not os.path.exists(filepath):
+            st.error(f"❌ ไม่พบไฟล์ที่ต้องการอัปโหลด: {filepath}")
             return False
+        
+        drive_service = get_gdrive_service()
+        if not drive_service:
+            st.error("❌ ไม่สามารถเชื่อมต่อ Google Drive Service ได้")
+            return False
+
+        file_metadata = {
+            'name': filename,
+            'parents': [folder_id]
+        }
+
+        media = MediaFileUpload(filepath, resumable=True)
+
+        file = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
+
+        return True
+
+    except Exception as e:
+        st.error(f"⚠️ เกิดข้อผิดพลาดในการอัปโหลด {filename}: {e}")
+        return False
             
 # 2. ฟังก์ชันโหลดโมเดล AI
 @st.cache_resource
