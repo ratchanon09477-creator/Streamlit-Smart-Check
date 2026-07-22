@@ -98,7 +98,7 @@ def upload_to_gdrive(file_path, file_name, folder_id):
             'parents': [GDRIVE_FOLDER_ID]
         }
         media = MediaFileUpload(file_path, resumable=True)
-           uploaded_file = drive_service.files().create(
+        uploaded_file = drive_service.files().create(
             body=file_metadata,
             media_body=media,
             fields='id'
