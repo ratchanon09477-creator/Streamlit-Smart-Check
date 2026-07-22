@@ -88,27 +88,19 @@ def get_gdrive_service():
         
 #สร้าง Folder เก็บรูปภาพ
 def create_gdrive_folder(folder_name, parent_folder_id):
-    """
-    ฟังก์ชันสร้างโฟลเดอร์ย่อยใหม่ใน Google Drive / Shared Drive
-    
-    :param folder_name: ชื่อโฟลเดอร์ย่อยที่ต้องการสร้าง (เช่น '20260722_143000_Inspection')
-    :param parent_folder_id: ID ของโฟลเดอร์หลัก
-    :return: folder_id ของโฟลเดอร์ย่อยที่สร้างใหม่
-    """
+    """ฟังก์ชันสร้างโฟลเดอร์ย่อยใน Shared Drive"""
     try:
         drive_service = get_gdrive_service()
         if not drive_service:
             st.error("❌ ไม่สามารถเชื่อมต่อ Google Drive Service ได้")
             return None
 
-        # กำหนด Metadata สำหรับสร้างโฟลเดอร์ (mimeType ต้องเป็น folder)
         folder_metadata = {
             'name': folder_name,
             'mimeType': 'application/vnd.google-apps.folder',
             'parents': [parent_folder_id]
         }
 
-        # สั่งสร้างโฟลเดอร์ (ต้องรองรับ Shared Drive)
         folder = drive_service.files().create(
             body=folder_metadata,
             fields='id',
@@ -116,12 +108,49 @@ def create_gdrive_folder(folder_name, parent_folder_id):
             supportsTeamDrives=True
         ).execute()
 
-        subfolder_id = folder.get('id')
-        return subfolder_id
-
+        return folder.get('id')
     except Exception as e:
         st.error(f"⚠️ เกิดข้อผิดพลาดในการสร้างโฟลเดอร์ {folder_name}: {e}")
         return None
+
+def upload_to_gdrive(filepath, filename, folder_id):
+    """ฟังก์ชันอัปโหลดไฟล์ลงโฟลเดอร์ใน Google Drive"""
+    try:
+        if not os.path.exists(filepath):
+            st.error(f"❌ ไม่พบไฟล์ที่ต้องการอัปโหลด: {filepath}")
+            return False
+
+        drive_service = get_gdrive_service()
+        if not drive_service:
+            st.error("❌ ไม่สามารถเชื่อมต่อ Google Drive Service ได้")
+            return False
+
+        file_metadata = {
+            'name': filename,
+            'parents': [folder_id]
+        }
+
+        media = MediaFileUpload(filepath, resumable=True)
+
+        file = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id',
+            supportsAllDrives=True,
+            supportsTeamDrives=True
+        ).execute()
+
+        return True
+    except Exception as e:
+        st.error(f"⚠️ เกิดข้อผิดพลาดในการอัปโหลด {filename}: {e}")
+        return False
+    finally:
+        # ลบไฟล์ชั่วคราวออกจากเครื่องเซิร์ฟเวอร์หลังอัปโหลดเสร็จ
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
 
             
 # 2. ฟังก์ชันโหลดโมเดล AI
@@ -270,11 +299,17 @@ if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่
             # ☁️ บันทึกลง Google Drive (ถ้าตั้งค่า GDRIVE_FOLDER_ID เอาไว้ใน Secrets)
             gdrive_folder_id = st.secrets.get("GDRIVE_FOLDER_ID", None)
             if gdrive_folder_id:
-                with st.spinner("☁️ กำลังสำรองข้อมูลขึ้น Google Drive..."):
-                    up_raw = upload_to_gdrive(filepath_raw, f"{base_filename}_raw.jpg", gdrive_folder_id)
-                    up_ai = upload_to_gdrive(filepath_ai, f"{base_filename}_ai.jpg", gdrive_folder_id)
-                    up_txt = upload_to_gdrive(txt_filepath, f"{base_filename}.txt", gdrive_folder_id)
+                with st.spinner("☁️ กำลังสร้างโฟลเดอร์และสำรองข้อมูลขึ้น Google Drive..."):
+                    # 1. สร้างโฟลเดอร์ย่อยตั้งชื่อตาม base_filename
+                    subfolder_id = create_gdrive_folder(base_filename, gdrive_folder_id)
                     
+                    # 2. นำไฟล์เข้าไปเก็บในโฟลเดอร์ย่อย
+                    if subfolder_id:
+                        up_raw = upload_to_gdrive(filepath_raw, f"{base_filename}_raw.jpg", subfolder_id)
+                        up_ai  = upload_to_gdrive(filepath_ai,  f"{base_filename}_ai.jpg",  subfolder_id)
+                        up_txt = upload_to_gdrive(txt_filepath,  f"{base_filename}_data.txt", subfolder_id)
+                        st.success(f"📂 สำรองข้อมูลใส่โฟลเดอร์ '{base_filename}' เรียบร้อยแล้ว!")
+                        
                     if up_raw and up_ai and up_txt:
                         st.toast("☁️ บันทึกรูปภาพและประวัติขึ้น Google Drive สำเร็จ!")
                     else:
