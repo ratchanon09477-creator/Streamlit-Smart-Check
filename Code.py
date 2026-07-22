@@ -54,11 +54,20 @@ def get_gdrive_service():
     """ดึงข้อมูล credentials จาก st.secrets แล้วสร้าง Drive API Service"""
     try:
         if "google_service_account" in st.secrets:
+            # ดึงค่า Secrets ออกมาทำเป็น dict
             creds_dict = dict(st.secrets["google_service_account"])
-            # หากมีการแปลง private_key เรื่อง \n
-            if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             
+            # จัดการแก้ไขปัญหา Format ของ private_key
+            if "private_key" in creds_dict:
+                pk = creds_dict["private_key"]
+                # แก้ไขกรณีที่มี \n ซ้อนกัน หรือจัด Format PEM ให้ถูกต้อง
+                pk = pk.replace("\\n", "\n")
+                if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
+                    pk = "-----BEGIN PRIVATE KEY-----\n" + pk
+                if not pk.endswith("-----END PRIVATE KEY-----"):
+                    pk = pk + "\n-----END PRIVATE KEY-----"
+                creds_dict["private_key"] = pk
+
             creds = service_account.Credentials.from_service_account_info(
                 creds_dict,
                 scopes=['https://www.googleapis.com/auth/drive.file']
