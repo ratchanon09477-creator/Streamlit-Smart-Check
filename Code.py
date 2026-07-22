@@ -86,44 +86,44 @@ def get_gdrive_service():
         st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive Service: {e}")
         return None
         
-def upload_file_to_gdrive(drive_service, folder_id, file_name, file_bytes, mime_type='image/jpeg'):
-    """
-    ฟังก์ชันอัปโหลดไฟล์ลง Google Drive / Shared Drive
+    def upload_file_to_gdrive(drive_service, folder_id, file_name, file_bytes, mime_type='image/jpeg'):
+        """
+        ฟังก์ชันอัปโหลดไฟล์ลง Google Drive / Shared Drive
+        
+        :param drive_service: ตัวแปร service ที่ได้จาก get_gdrive_service()
+        :param folder_id: GDRIVE_FOLDER_ID ที่ตั้งไว้ใน st.secrets
+        :param file_name: ชื่อไฟล์ที่ต้องการตั้งใน Google Drive (เช่น 'result_001.jpg')
+        :param file_bytes: ข้อมูลไฟล์แบบ Bytes (เช่น จาก BytesIO หรือรูปที่ถ่ายจากกล้อง)
+        :param mime_type: ชนิดของไฟล์
+        """
+        try:
+            # 1. ระบุชื่อไฟล์ และ Folder ปลายทาง
+            file_metadata = {
+                'name': file_name,
+                'parents': [folder_id]
+            }
     
-    :param drive_service: ตัวแปร service ที่ได้จาก get_gdrive_service()
-    :param folder_id: GDRIVE_FOLDER_ID ที่ตั้งไว้ใน st.secrets
-    :param file_name: ชื่อไฟล์ที่ต้องการตั้งใน Google Drive (เช่น 'result_001.jpg')
-    :param file_bytes: ข้อมูลไฟล์แบบ Bytes (เช่น จาก BytesIO หรือรูปที่ถ่ายจากกล้อง)
-    :param mime_type: ชนิดของไฟล์
-    """
-    try:
-        # 1. ระบุชื่อไฟล์ และ Folder ปลายทาง
-        file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]
-        }
-
-        # 2. แปลง Bytes ให้เป็น Media IoBase สำหรับอัปโหลด
-        media = MediaIoBaseUpload(
-            io.BytesIO(file_bytes),
-            mimetype=mime_type,
-            resumable=True
-        )
-
-        # 3. สั่งอัปโหลดไฟล์ (ใส่ supportsAllDrives=True เพื่อให้รองรับ Shared Drive)
-        uploaded_file = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id, webViewLink',
-            supportsAllDrives=True  # 👈 บรรทัดนี้สำคัญมากสำหรับ Shared Drive!
-        ).execute()
-
-        st.success(f"✅ อัปโหลดไฟล์เรียบร้อยแล้ว! File ID: {uploaded_file.get('id')}")
-        return uploaded_file.get('id')
-
-    except Exception as e:
-        st.error(f"⚠️ เกิดข้อผิดพลาดในการอัปโหลดไฟล์: {e}")
-        return None
+            # 2. แปลง Bytes ให้เป็น Media IoBase สำหรับอัปโหลด
+            media = MediaIoBaseUpload(
+                io.BytesIO(file_bytes),
+                mimetype=mime_type,
+                resumable=True
+            )
+    
+            # 3. สั่งอัปโหลดไฟล์ (ใส่ supportsAllDrives=True เพื่อให้รองรับ Shared Drive)
+            uploaded_file = drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, webViewLink',
+                supportsAllDrives=True  # 👈 บรรทัดนี้สำคัญมากสำหรับ Shared Drive!
+            ).execute()
+    
+            st.success(f"✅ อัปโหลดไฟล์เรียบร้อยแล้ว! File ID: {uploaded_file.get('id')}")
+            return uploaded_file.get('id')
+    
+        except Exception as e:
+            st.error(f"⚠️ เกิดข้อผิดพลาดในการอัปโหลดไฟล์: {e}")
+            return None
 
 # 2. ฟังก์ชันโหลดโมเดล AI
 @st.cache_resource
