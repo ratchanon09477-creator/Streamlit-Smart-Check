@@ -86,41 +86,43 @@ def get_gdrive_service():
         st.error(f"⚠️ เกิดข้อผิดพลาดในการเชื่อมต่อ Google Drive Service: {e}")
         return None
         
-    import os
-from googleapiclient.http import MediaFileUpload
-
-def upload_to_gdrive(filepath, filename, folder_id):
-    """ฟังก์ชันอัปโหลดไฟล์จากดิสก์ลง Google Drive / Shared Drive"""
+#สร้าง Folder เก็บรูปภาพ
+def create_gdrive_folder(folder_name, parent_folder_id):
+    """
+    ฟังก์ชันสร้างโฟลเดอร์ย่อยใหม่ใน Google Drive / Shared Drive
+    
+    :param folder_name: ชื่อโฟลเดอร์ย่อยที่ต้องการสร้าง (เช่น '20260722_143000_Inspection')
+    :param parent_folder_id: ID ของโฟลเดอร์หลัก
+    :return: folder_id ของโฟลเดอร์ย่อยที่สร้างใหม่
+    """
     try:
-        if not os.path.exists(filepath):
-            st.error(f"❌ ไม่พบไฟล์ที่ต้องการอัปโหลด: {filepath}")
-            return False
-        
         drive_service = get_gdrive_service()
         if not drive_service:
             st.error("❌ ไม่สามารถเชื่อมต่อ Google Drive Service ได้")
-            return False
+            return None
 
-        file_metadata = {
-            'name': filename,
-            'parents': [folder_id]
+        # กำหนด Metadata สำหรับสร้างโฟลเดอร์ (mimeType ต้องเป็น folder)
+        folder_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_folder_id]
         }
 
-        media = MediaFileUpload(filepath, resumable=True)
-
-        file = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
+        # สั่งสร้างโฟลเดอร์ (ต้องรองรับ Shared Drive)
+        folder = drive_service.files().create(
+            body=folder_metadata,
             fields='id',
-            supportsAllDrives=True,    
+            supportsAllDrives=True,
             supportsTeamDrives=True
         ).execute()
 
-        return True
+        subfolder_id = folder.get('id')
+        return subfolder_id
 
     except Exception as e:
-        st.error(f"⚠️ เกิดข้อผิดพลาดในการอัปโหลด {filename}: {e}")
-        return False
+        st.error(f"⚠️ เกิดข้อผิดพลาดในการสร้างโฟลเดอร์ {folder_name}: {e}")
+        return None
+
             
 # 2. ฟังก์ชันโหลดโมเดล AI
 @st.cache_resource
