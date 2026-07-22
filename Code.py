@@ -94,14 +94,15 @@ def upload_to_gdrive(file_path, file_name, folder_id):
     
     try:
         file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]
+            'name': 'filename.jpg',
+            'parents': [GDRIVE_FOLDER_ID]
         }
         media = MediaFileUpload(file_path, resumable=True)
-        uploaded_file = service.files().create(
+           uploaded_file = drive_service.files().create(
             body=file_metadata,
             media_body=media,
             fields='id'
+            supportsAllDrives=True  # <--- เพิ่มบรรทัดนี้ลงไป เพื่อให้รองรับ Shared Drive
         ).execute()
         return uploaded_file.get('id')
     except Exception as e:
