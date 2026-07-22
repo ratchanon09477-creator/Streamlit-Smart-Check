@@ -388,10 +388,23 @@ else:
                         items_found = []
                         if os.path.exists(txt_filepath):
                             with open(txt_filepath, "r", encoding="utf-8") as f:
-                                content = f.read().strip()
-                                if content:
-                                    items_found = [item.strip().lower() for item in content.split(",")]
-                        
+                                text_content = f.read()
+                                
+                                # กรณี 1: เป็นไฟล์รูปแบบใหม่ (มีหัวข้อแยก Found/Missing)
+                                if "--- รายการที่พบ" in text_content:
+                                    # ตัดเอาเฉพาะข้อความระหว่าง "รายการที่พบ" ถึง "รายการที่ขาด"
+                                    try:
+                                        found_section = text_content.split("--- รายการที่พบ (Found) ---")[1].split("--- รายการที่ขาด (Missing) ---")[0]
+                                        for cls in REQUIRED_CLASSES:
+                                            # ตรวจเช็คว่ามีคลาสภาษาอังกฤษหรือสัญลักษณ์ ✅ อยู่ในส่วนรายการที่พบหรือไม่
+                                            if cls in found_section.lower():
+                                                items_found.append(cls)
+                                    except IndexError:
+                                        pass
+                                
+                                # กรณี 2: เป็นไฟล์รูปแบบเก่า (คั่นด้วยจุลภาค ,)
+                                else:
+                                    items_found = [item.strip().lower() for item in text_content.split(",") if item.strip()]
                         try:
                             parts = base_prefix.split("_")
                             formatted_time = datetime.strptime(f"{parts[0]}_{parts[1]}", "%Y%m%d_%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
