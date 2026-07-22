@@ -150,7 +150,7 @@ def upload_to_gdrive(filepath, filename, folder_id):
 def load_model():
     api_key = st.secrets.get("ROBOFLOW_API_KEY", "xWM1igmZO9XPzWUoOmBc")
     project_id = "detect-object-dfq6s"
-    version_id = 15
+    version_id = 17
     client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key=api_key)
     return client, f"{project_id}/{version_id}"
 
