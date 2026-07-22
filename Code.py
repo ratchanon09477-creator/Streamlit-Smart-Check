@@ -144,15 +144,7 @@ def upload_to_gdrive(filepath, filename, folder_id):
     except Exception as e:
         st.error(f"⚠️ เกิดข้อผิดพลาดในการอัปโหลด {filename}: {e}")
         return False
-    finally:
-        # ลบไฟล์ชั่วคราวออกจากเครื่องเซิร์ฟเวอร์หลังอัปโหลดเสร็จ
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except Exception:
-                pass
 
-            
 # 2. ฟังก์ชันโหลดโมเดล AI
 @st.cache_resource
 def load_model():
@@ -290,11 +282,32 @@ if app_mode == "📸 หน้าหลัก (ตรวจเช็คสิ่
 
             # 1. เซฟไฟล์ภาพธรรมดา (Raw)
             image_raw.save(filepath_raw)
+            
             # 2. เซฟไฟล์ภาพพร้อมกรอบจับ (AI)
             image_ai.save(filepath_ai)
-            # 3. เซฟไฟล์ประวัติของที่สแกนเจอ (.txt)
+            
+            # 3. 📌 [ปรับแก้ส่วนนี้] บันทึกไฟล์ TXT แยกทั้งรายการที่พบ และ รายการที่ขาด
+            missing_objects = [cls for cls in REQUIRED_CLASSES if cls not in found_objects]
+            
             with open(txt_filepath, "w", encoding="utf-8") as f:
-                f.write(",".join(list(found_objects)))
+                f.write("=== ผลการตรวจเช็คสิ่งของ ===\n")
+                f.write(f"สถานะ: {status_str}\n\n")
+                
+                f.write("--- รายการที่พบ (Found) ---\n")
+                if found_objects:
+                    for cls in found_objects:
+                        display_name = CLASS_MAPPING_TH.get(cls, cls)
+                        f.write(f"✅ {display_name} ({cls})\n")
+                else:
+                    f.write("- ไม่พบสิ่งของใดๆ\n")
+                
+                f.write("\n--- รายการที่ขาด (Missing) ---\n")
+                if missing_objects:
+                    for cls in missing_objects:
+                        display_name = CLASS_MAPPING_TH.get(cls, cls)
+                        f.write(f"❌ {display_name} ({cls})\n")
+                else:
+                    f.write("- ครบถ้วน (ไม่มีรายการที่ขาด)\n")
 
             # ☁️ บันทึกลง Google Drive (ถ้าตั้งค่า GDRIVE_FOLDER_ID เอาไว้ใน Secrets)
             gdrive_folder_id = st.secrets.get("GDRIVE_FOLDER_ID", None)
